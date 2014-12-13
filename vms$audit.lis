@@ -1,0 +1,26 @@
+Listing of save set(s)
+
+Save set:          VMS$AUDIT.BCK
+Written by:        LRICKER     
+UIC:               [000007,000035]
+Date:              12-DEC-2014 08:22:14.46
+Command:           BACKUP/LIST=VMS$AUDIT/NOCRC/GROUP_SIZE=0/INTERCHANGE VMS$AUDIT.COM;,VMS$AUDIT_*.TPU;,VMS$AUDIT_BOOT_OPTIONS.ANSWERS;,QUE$STALLED.COM;,UAF$QUICK_ANALYSIS.COM;,QUICK_AUDIT.COM; VMS$AUDIT.BCK/SAVE_SET
+Operating system:  hp OpenVMS I64 version V8.4
+BACKUP version:    V8.4
+CPU ID register:   80000000
+Node name:         _CLASS8::
+Written on:        _DSA2:
+Block size:        32256
+Buffer count:      1238
+
+[LRICKER.VMSAUDITS]VMS$AUDIT.COM;21                         68  12-DEC-2014 08:20
+[LRICKER.VMSAUDITS]VMS$AUDIT_REPLACECRLF.TPU;2               7  16-JUN-2014 11:05
+[LRICKER.VMSAUDITS]VMS$AUDIT_TRIMTRAIL.TPU;2                 7  16-JUN-2014 11:05
+[LRICKER.VMSAUDITS]VMS$AUDIT_BOOT_OPTIONS.ANSWERS;1          1  28-MAY-2014 11:16
+[LRICKER.VMSAUDITS]QUE$STALLED.COM;2                         8  17-JUN-2014 14:52
+[LRICKER.VMSAUDITS]UAF$QUICK_ANALYSIS.COM;1                  5   2-SEP-2014 09:29
+[LRICKER.VMSAUDITS]QUICK_AUDIT.COM;2                         3  16-JUN-2014 11:07
+
+Total of 7 files, 99 blocks
+End of save set
+

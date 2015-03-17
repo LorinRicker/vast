@@ -22,6 +22,8 @@ $ !                      | REVIEW | TYPE | EDIT | HELP ]
 $ !
 $ ! ========================
 $ ! Release History:
+$ !  17-MAR-2015 : Add SHOW INTRUSION and ANALYZE /AUDIT /SUMMARY, with
+$ !                AnalyzeAudit and FindSAJournal routines.
 $ !  16-MAR-2015 : Add UAF$DETAILED_ANALYSIS.COM to Backup and Zip lists.
 $ !                Also added invocation of UAF$DETAILED_ANALYSIS.COM
 $ !                following generation of SYSUAF /FULL listing.
@@ -85,6 +87,57 @@ $ ! ========================
 $ !
 $ !
 $ !
+$AnalyzeAudit:  SUBROUTINE
+$ ! P1 = ANALYZE /AUDIT event type
+$ ! P2 = date for /SINCE=
+$ ! P3 = Security Audit Journal filespec (discovered by FindSAJournal)
+$ ON CONTROL_Y THEN GOSUB AACtrl_Y
+$ ON ERROR THEN EXIT %X2C
+$ !
+$ AnAudit  = "ANALYZE /AUDIT ''P3' /SINCE=''P2' /NOINTERACTIVE /SUMMARY=(PLOT,COUNT)"
+$ AnAtitle = "ANALYZE /AUDIT /EVENT_TYPE=(''P1')"
+$ CALL AuditStep "''AnAudit' /EVENT_TYPE=(''P1')" "NOPAGE" "''AnAtitle'"
+$ EXIT 1
+$ !
+$AACtrl_Y:
+$ RETURN %X2C
+$ ENDSUBROUTINE  ! AnAudit
+$ !
+$FindSAJournal:  SUBROUTINE
+$ ON CONTROL_Y THEN GOSUB FSAJCtrl_Y
+$ ON ERROR THEN EXIT %X2C
+$ VA$SAJournal == "SYS$MANAGER:SECURITY.AUDIT$JOURNAL"  ! init: best guess...
+$ vlist  = "\Destination\Monitoring\"
+$ vlistl = F$LENGTH( vlist )
+$ jtmp = "SYS$SCRATCH:VMS$AUDIT_SAJ.TMP"
+$ SHOW AUDIT /JOURNAL /OUTPUT='jtmp'
+$ OPEN /READ /ERROR=FSAJCtrl_Y fj 'jtmp'
+$FSAJ0:
+$ READ /END_OF_FILE=FSAJ1 fj rec
+$ rec = F$EDIT( rec, "TRIM,COMPRESS" ) - ":"
+$ tag = F$ELEMENT( 0, " ", rec )
+$ val = F$ELEMENT( 1, " ", rec )
+$ IF ( F$LOCATE( "\''tag'\", vlist ) .GE. vlistl ) THEN GOTO FSAJ0  ! skip...
+$ GOTO FSAJ$'tag'
+$FSAJ$Destination:
+$ sajou = F$EDIT( val, "COLLAPSE" )  ! provisional... is it also enabled?
+$ GOTO FSAJ0
+$FSAJ$Monitoring:
+$ IF ( val .NES. "enabled" )
+$ THEN GOTO FSAJ0                    ! keep looking...
+$ ELSE VA$SAJournal == sajou         ! got it
+$      GOTO FSAJ1                    !  ...done
+$ ENDIF
+$FSAJ1:
+$ CLOSE /NOLOG fj
+$ DELETE /NOLOG 'jtmp';*
+$ wso "%''Fac'-I-USING_JOURNAL, VA$SAJournal == ''VA$SAJournal'"
+$ EXIT 1
+$ !
+$FSAJCtrl_Y:
+$ RETURN %X2C
+$ ENDSUBROUTINE  ! FindSAJournal
+
 $DiskSpace:  SUBROUTINE
 $ ON CONTROL_Y THEN GOSUB DSCtrl_Y
 $ ON ERROR THEN EXIT %X2C
@@ -421,7 +474,7 @@ $ SET CONTROL=(Y,T)
 $ ON CONTROL THEN GOSUB Ctrl_Y
 $ ON ERROR THEN GOTO Done
 $ !
-$ ProcVersion = "V1.7-01 (16-Mar-2015)"
+$ ProcVersion = "V1.8-01 (17-Mar-2015)"
 $ !
 $ Proc   = F$ENVIRONMENT("PROCEDURE")
 $ Fac    = F$PARSE(Proc,,,"NAME","SYNTAX_ONLY")
@@ -452,6 +505,12 @@ $ V$BckList  = "''Fac'.com;,''Fac'_*.tpu;,''Fac'_boot_options.answers;,que$stall
 $ V$ZipArc   = "''Fac'.zip"
 $ V$ZipList  = "''Fac'.com ''Fac'_*.tpu ''Fac'_boot_options.answers que$stalled.com" -
              + " uaf$detailed_analysis.com uaf$quick_analysis.com quick_audit.com"
+$ !
+$ ! Calculate the first of last month (approx):
+$ ago = "-30-"
+$ FirstofLastMonth = "1-" -
+                   + F$CVTIME( ago, "ABSOLUTE", "MONTH" ) -
+                   + "-" + F$CVTIME( ago, "ABSOLUTE", "YEAR" )
 $ !
 $ IF ( VMSver .GES. "V7.4" )
 $ THEN V$DEASSIGN = "DEASSIGN /NOLOG"
@@ -561,7 +620,14 @@ $ ELSE CALL AuditStep "V$DIR SYS$SYSTEM:SYSUAF.DAT;*,RIGHTSLIST.DAT;*" "" "DIREC
 $ ENDIF
 $ !
 $ CALL AuditStep "SHOW AUDIT /ALL" "NOPAGE"
-$ CALL AuditStep "SHOW ACCOUNTING" "NOPAGE"
+$ CALL AuditStep "SHOW INTRUSION"
+$ CALL FindSAJournal  ! sets global VA$SAJournal
+$ CALL AnalyzeAudit "BREAKIN" "''FirstofLastMonth'" "''VA$SAJournal'"
+$ CALL AnalyzeAudit "LOGFAIL" "''FirstofLastMonth'" "''VA$SAJournal'"
+$ CALL AnalyzeAudit "SYSUAF"  "''FirstofLastMonth'" "''VA$SAJournal'"
+$ CALL AnalyzeAudit "ALL"     "''FirstofLastMonth'" "''VA$SAJournal'"
+$ !
+$ CALL AuditStep "SHOW ACCOUNTING" ""
 $ CALL AuditStep "V$DIR SYS$SYSTEM:LMF$*.LDB" "NOPAGE" "DIRECTORY SYS$SYSTEM:LMF$*.LDB"
 $ !
 $ ! Special: Review all batch/device/printer/symbiont queues for job-counts exceeding threshold:
@@ -872,6 +938,7 @@ $ SET NOON
 $ IF OutToFile THEN V$DEASSIGN /PROCESS sys$output
 $ !
 $ IF F$TYPE(prv)             .NES. "" THEN prv = F$SETPRV(prv)
+$ IF F$TYPE(VA$SAJournal)    .NES. "" THEN DELETE /SYMBOL /GLOBAL VA$SAJournal
 $ IF F$TYPE(VA$DECnetInst)   .NES. "" THEN DELETE /SYMBOL /GLOBAL VA$DECnetInst
 $ IF F$TYPE(VA$TCPIPInst)    .NES. "" THEN DELETE /SYMBOL /GLOBAL VA$TCPIPInst
 $ IF F$TYPE(VA$MultinetInst) .NES. "" THEN DELETE /SYMBOL /GLOBAL VA$MultinetInst

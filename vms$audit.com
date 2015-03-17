@@ -1,6 +1,6 @@
 $ ! VMS$AUDIT.COM --                                               'F$VERIFY(0)'
 $ !
-$ ! Copyright © 2014 by Lorin Ricker.  All rights reserved, with acceptance,
+$ ! Copyright © 2014-2015 by Lorin Ricker.  All rights reserved, with acceptance,
 $ ! use, modification and/or distribution permissions as granted and controlled
 $ ! by and under the GPL described herein.
 $ !
@@ -22,6 +22,26 @@ $ !                      | REVIEW | TYPE | EDIT | HELP ]
 $ !
 $ ! ========================
 $ ! Release History:
+$ !  16-MAR-2015 : Add UAF$DETAILED_ANALYSIS.COM to Backup and Zip lists.
+$ !                Also added invocation of UAF$DETAILED_ANALYSIS.COM
+$ !                following generation of SYSUAF /FULL listing.
+$ !                Also added DiskSpace display (after SHOW DEV D /MOUNTED).
+$ !  12-MAR-2015 : DEASSIGN did not support /[NO]LOG until VMS v7.4,
+$ !                so invent V$DEASSIGN to conditionalize.
+$ !                Also conditionalize UAF$QUICK_ANALYSIS.COM, as it
+$ !                uses both PIPE and SEARCH /STATISTICS=SYMBOL too.
+$ !                Fixed one VMSver comparison bug.
+$ !  10-MAR-2015 : UTC$TIME_SETUP.COM is intransigent about handling
+$ !                redirected SYS$OUTPUT, so kludges are necessary.
+$ !                Also now doing PreCleaner of last-run reports;
+$ !                full suppression of AUTHORIZE "%UAF-I-LSTMSG" noise.
+$ !                Also produces a summary quick-list of report files.
+$ !  09-MAR-2015 : Added call to UTC$TIME_SETUP SHOW to check/confirm
+$ !                AUTO_DLIGHT_SAV sysgen parameter and timezone logicals.
+$ !                Also added display of F$GETSYI("BOOTTIME").
+$ !                Also conditionalize use of PIPE command (VMS >= v7.1 only);
+$ !                this currently impacts NetInstalled (only), thus limiting
+$ !                network detail reporting to >= VMS v7.1.
 $ !  12-DEC-2014 : Official re-release, version# updated.
 $ !  12-NOV-2014 : Reorganized steps to promote selected summaries to
 $ !                the top/front of the report.
@@ -63,6 +83,52 @@ $ !  29-May-2014 : Baseline functionality in place
 $ !  28-May-2014 : Proof-of-concept; core functions working
 $ ! ========================
 $ !
+$ !
+$ !
+$DiskSpace:  SUBROUTINE
+$ ON CONTROL_Y THEN GOSUB DSCtrl_Y
+$ ON ERROR THEN EXIT %X2C
+$ !
+$ wso F$FAO( "Disk Space !#*=", 44 )
+$DSpc0:
+$ dsk = F$DEVICE( , "DISK" )
+$ IF ( dsk .EQS. "" ) THEN GOTO DSpcEnd
+$ IF ( .NOT. F$GETDVI( dsk, "MNT" ) ) .OR. ( F$GETDVI( dsk, "FOR" ) ) -
+  .OR. ( F$GETDVI( dsk, "SWL" ) ) .OR. ( F$GETDVI( dsk, "SHDW_MEMBER" ) ) -
+  THEN GOTO DSpc0
+$ voln  = F$GETDVI( dsk, "VOLNAM" )
+$ total = F$GETDVI( dsk, "MAXBLOCK" )
+$ free  = F$GETDVI( dsk, "FREEBLOCKS" )
+$ used  = total - free
+$ dsk   = dsk - "_"  ! strip leading underscore
+$ !
+$DSrange:
+$ IF ( free .LT. 0 ) .OR. ( used .LT. 0 ) .OR. ( total .LT. 0 )
+$ THEN free  = ( free  / 2 ) .AND. %X7FFFFFFF
+$      used  = ( used  / 2 ) .AND. %X7FFFFFFF
+$      total = ( total / 2 ) .AND. %X7FFFFFFF
+$ ENDIF
+$ IF ( used .GT. ( %X7FFFFFFF / 100 ) )
+$ THEN free  = free  / 10
+$      used  = used  / 10
+$      total = total / 10
+$      GOTO DSrange
+$ ENDIF
+$ !
+$ freepct = ( free * 100 ) / total
+$ usedpct = ( used * 100 ) / total
+$ wso F$FAO( "  !20AS!12AS !2SL% free, !2SL% used", dsk, voln, freepct, usedpct )
+$ GOTO DSpc0
+$ !
+$DSpcEnd:
+$ wso F$FAO( "!#*=", 55 )
+$ wso ""
+$ EXIT 1
+$ !
+$DSCtrl_Y:
+$ RETURN %X2C
+$ ENDSUBROUTINE  ! DiskSpace
+$ !
 $TimeStamp:  SUBROUTINE
 $ ! P1 : timestamp to format (empty "" means "NOW")
 $ !
@@ -79,6 +145,7 @@ $ ENDSUBROUTINE  ! TimeStamp
 $ !
 $NetInstalled:  SUBROUTINE
 $ ! P1 : network to detect
+$ !      Note: PIPE was added in VMS v7.1 --
 $ Sym = P1 - "/"  ! cleanout any punctuation, e.g., "TCP/IP" -> "TCPIP"
 $ !
 $ PIPE SHOW NET | SEARCH SYS$INPUT "''P1'" /NOOUTPUT /NOWARNINGS ; netstatus = ( $STATUS .EQS. "%X10000001" )
@@ -231,7 +298,7 @@ $ !
 $UAFsetup:  SUBROUTINE
 $ ! P1 : Command
 $ IF ( F$TRNLNM("SYSUAF","LNM$SYSTEM") .EQS. "" )
-$ THEN DEFINE /PROCESS /NOLOG sysuaf SYS$SYSTEM:SYSUAF.DAT
+$ THEN DEFINE /PROCESS /NOLOG sysuaf     SYS$SYSTEM:SYSUAF.DAT
 $      DEFINE /PROCESS /NOLOG rightslist SYS$SYSTEM:RIGHTSLIST.DAT
 $ ENDIF
 $ EXIT 1
@@ -240,16 +307,24 @@ $ !
 $UAFteardown:  SUBROUTINE
 $ ! P1 : Command
 $ IF ( F$TRNLNM("SYSUAF","LNM$PROCESS") .NES. "" )
-$ THEN DEASSIGN /NOLOG /PROCESS sysuaf
-$      DEASSIGN /NOLOG /PROCESS rightslist
+$ THEN V$DEASSIGN /PROCESS sysuaf
+$      V$DEASSIGN /PROCESS rightslist
 $ ENDIF
 $ IF ( F$SEARCH("[]SYSUAF.LIS") .NES. "" )
 $ THEN ! AUTHORIZE is simplistic about naming LIST files, so fix:
 $      IF ( F$LOCATE("/FULL",P1) .LT. F$LENGTH(P1) )
-$      THEN RENAME /NOLOG []SYSUAF.LIS []'Fac'_'Node'_SYSUAF_FULL.LIS
-$      ELSE RENAME /NOLOG []SYSUAF.LIS []'Fac'_'Node'_SYSUAF_BRIEF.LIS
+$      THEN ! post AUTH LIST /FULL: detailed analysis
+$           RENAME /NOLOG []SYSUAF.LIS 'VA$UAFfull'
+$           @'DD'UAF$DETAILED_ANALYSIS 'VA$UAFfull'
+$      ELSE ! post AUTH LIST /BRIEF: quick analysis
+$           RENAME /NOLOG []SYSUAF.LIS 'VA$UAFbrief'
 $           ! Not very modular, but let's do some account analysis here, too:
-$           @'DD'UAF$QUICK_ANALYSIS "[]''Fac'_''Node'_SYSUAF_BRIEF.LIS"
+$           IF ( VMSver .GES. "V8.0" ) ! PIPE command in >= VMS v7.1 ...
+$                                      ! and SEARCH /STATISTICS=SYMBOL in >= v8.0
+$           THEN @'DD'UAF$QUICK_ANALYSIS 'VA$UAFbrief'
+$           ELSE wserr F$FAO( "%!AS-W-OLDVMS, PIPE &/or SEARCH/STAT=SYMBOL unavailable (pre-v!AS)", Fac, "7.1/8.0" )
+$                wserr "-W-NOTRUN, cannot execute @UAF$QUICK_ANALYSIS"
+$           ENDIF
 $      ENDIF
 $ ENDIF
 $ EXIT 1
@@ -271,7 +346,12 @@ $ THEN wso "$ ''P3'"
 $ ELSE wso "$ [1m''P3'[0m"
 $ ENDIF
 $ ON SEVERE_ERROR THEN CONTINUE  ! never say die!
-$ IF UAFlag THEN CALL UAFsetup "''P1'"
+$ IF UAFlag
+$ THEN CALL UAFsetup "''P1'"
+$      ! and suppress the "%UAF-I-LSTMSG*" noise from AUTHORIZE:
+$      DEFINE /USER_MODE sys$output nla0:
+$      DEFINE /USER_MODE sys$error  nla0:
+$ ENDIF
 $ ! ---------
 $ 'P1'
 $ ! ---------
@@ -289,6 +369,22 @@ $ EXIT %X2C
 $ASCtrl_Y:
 $ RETURN %X2C
 $ ENDSUBROUTINE  ! AuditStep
+$ !
+$PreCleaner:  SUBROUTINE
+$ ! P1 : Filespec to clean
+$ ON CONTROL_Y THEN GOSUB PClCtrl_Y
+$ ON ERROR THEN EXIT %X2C
+$ d = DD - "]"
+$ IF F$SEARCH("''DD'REPORTS.DIR") .EQS. "" THEN CREATE /DIRECTORY /NOLOG 'd'.REPORTS]
+$ IF F$SEARCH(P1) .NES. ""
+$ THEN IF F$SEARCH("''P1';-1") .NES. "" THEN PURGE /NOLOG 'P1'
+$      RENAME /NOLOG 'P1' 'd'.REPORTS]
+$ ENDIF
+$ EXIT 1
+$ !
+$PClCtrl_Y:
+$ RETURN %X2C
+$ ENDSUBROUTINE  ! PreCleaner
 $ !
 $Cleaner:  SUBROUTINE
 $ ! P1 : Filespec to clean
@@ -309,8 +405,8 @@ $ !
 $ IF Stat .AND. ( .NOT. Debugging )
 $ THEN vn  = F$PARSE(P1,,,"VERSION") - ";"
 $      vno = F$INTEGER(vn) - 1
-$      PURGE /SINCE=TODAY 'P1'
-$      RENAME 'P1' *.*;'vno'
+$      PURGE /NOLOG /SINCE=TODAY 'P1'
+$      RENAME /NOLOG 'P1' *.*;'vno'
 $ ENDIF
 $ EXIT 1
 $ !
@@ -325,7 +421,7 @@ $ SET CONTROL=(Y,T)
 $ ON CONTROL THEN GOSUB Ctrl_Y
 $ ON ERROR THEN GOTO Done
 $ !
-$ ProcVersion = "V1.2-01 (12-Dec-2014)"
+$ ProcVersion = "V1.7-01 (16-Mar-2015)"
 $ !
 $ Proc   = F$ENVIRONMENT("PROCEDURE")
 $ Fac    = F$PARSE(Proc,,,"NAME","SYNTAX_ONLY")
@@ -344,15 +440,28 @@ $ V$AUTH     = "MCR AUTHORIZE"
 $ V$LANCP    = "MCR LANCP"
 $ V$SYSGEN   = "MCR SYSGEN"
 $ V$SYSMAN   = "MCR SYSMAN"
+$ V$UTCTIME  = "@SYS$MANAGER:UTC$TIME_SETUP SHOW"
 $ V$IFCONFIG = "$SYS$SYSTEM:TCPIP$IFCONFIG"
 $ V$NCP      = "MCR NCP"
 $ V$NCL      = "MCR NCL"
 $ V$DIR      = "DIRECTORY /SIZE /OWNER /DATE /PROTECTION /WIDTH=(FILENAME=20,SIZE=9,OWNER=16)"
 $ V$Star     = "*"
 $ V$BckSSN   = Fac
-$ V$BckList  = "''Fac'.com;,''Fac'_*.tpu;,''Fac'_boot_options.answers;,que$stalled.com;,uaf$quick_analysis.com;,quick_audit.com;"
+$ V$BckList  = "''Fac'.com;,''Fac'_*.tpu;,''Fac'_boot_options.answers;,que$stalled.com;" -
+             + ",uaf$detailed_analysis.com;,uaf$quick_analysis.com;,quick_audit.com;"
 $ V$ZipArc   = "''Fac'.zip"
-$ V$ZipList  = "''Fac'.com ''Fac'_*.tpu ''Fac'_boot_options.answers que$stalled.com uaf$quick_analysis.com quick_audit.com"
+$ V$ZipList  = "''Fac'.com ''Fac'_*.tpu ''Fac'_boot_options.answers que$stalled.com" -
+             + " uaf$detailed_analysis.com uaf$quick_analysis.com quick_audit.com"
+$ !
+$ IF ( VMSver .GES. "V7.4" )
+$ THEN V$DEASSIGN = "DEASSIGN /NOLOG"
+$ ELSE V$DEASSIGN = "DEASSIGN"  ! /[NO]LOG wasn't implemented prior to 7.4
+$ ENDIF
+$ !
+$ VA$AuditReport == F$PARSE("''Fac'_''Node'","''Dev'''Dir'.REPORT",,,"SYNTAX_ONLY") - ";"
+$ VA$UAFfull      = "''DD'''Fac'_''Node'_SYSUAF_FULL.LIS"
+$ VA$UAFbrief     = "''DD'''Fac'_''Node'_SYSUAF_BRIEF.LIS"
+$ VA$UTCreport    = "''DD'''Fac'_''Node'_utctime.lis"
 $ !
 $ wso    = "WRITE sys$output"
 $ wserr  = "WRITE sys$error"
@@ -364,8 +473,6 @@ $ VA$PgWi      == 78
 $ VA$Dashes    == F$FAO( "!#*-", VA$PgWi )
 $ VA$DblDashes == F$FAO( "!#*=", VA$PgWi )
 $ !
-$ CALL TimeStamp ""   ! global VA$TimeStamp
-$ !
 $ ! ========================
 $ !
 $ IF ( P1 .NES. "" )
@@ -375,11 +482,21 @@ $ ENDIF
 $ !
 $GEN$:   ! Generate the Audit Report
 $AUD$:
+$ !
+$Pre$:
+$ ! clean up last set of report-files, purge and rename to [.REPORTS] --
+$ Call PreCleaner 'VA$AuditReport'
+$ Call PreCleaner 'VA$UAFfull'
+$ Call PreCleaner 'VA$UAFbrief'
+$ Call PreCleaner 'VA$UTCreport'
+$ !
+$ CALL TimeStamp ""   ! global VA$TimeStamp
+$ !
 $ wserr F$FAO( "!/%!AS-I-START, [4mVMS Audit Report[0m !AS starting at [1m!AS[0m...!/", Fac, ProcVersion, VA$TimeStamp )
 $ READ sys$command User /END_OF_FILE=Done /PROMPT="Enter your full name: "
 $ User = F$EDIT(User,"TRIM,COMPRESS")
 $ !
-$ deffile = F$PARSE("''Fac'_''Node'","''Dev'''Dir'.REPORT",,,"SYNTAX_ONLY") - ";"
+$ deffile = VA$AuditReport
 $ !
 $ wso ""
 $ wso "  Choices for output file --"
@@ -395,6 +512,7 @@ $ THEN Answer = F$PARSE(Answer,deffile,,,"SYNTAX_ONLY") - ";"
 $      DEFINE /NOLOG /PROCESS sys$output 'Answer'
 $      OutToFile = "TRUE"
 $      VA$AuditReport == Answer    ! Save output filespec as a global symbol, don't delete it on exit...
+$ ! else display just goes to terminal...
 $ ENDIF
 $ !
 $ NeedPrv = "SYSNAM,SYSPRV,SECURITY,CMKRNL,VOLPRO,BYPASS,OPER"
@@ -407,15 +525,24 @@ $ !
 $ !
 $ ! ========================
 $ !
-$ CALL NetInstalled "DECnet"
-$ CALL NetInstalled "TCP/IP"
-$ CALL NetInstalled "Multinet"
+$ IF ( VMSver .GES. "V7.1" )         ! PIPE command in VMS v7.1 and higher...
+$ THEN CALL NetInstalled "DECnet"
+$      CALL NetInstalled "TCP/IP"
+$      CALL NetInstalled "Multinet"
+$ ELSE VA$DECnetInst   == "FALSE"   ! ...get no network report details for VMS < v7.1
+$      VA$TCPIPInst    == "FALSE"
+$      VA$MultinetInst == "FALSE"
+$ ENDIF
 $ !
 $ CALL ReportHeader "''Fac'" "''Proc'" "''ProcVersion'" "''Node'" "''VA$TimeStamp'" "''User'"
 $ !
 $ ! ========================
 $ ! I. System Summaries:
+$ wso ""
+$ wso F$FAO("!/%!AS-I-REBOOTED, last reboot on !AS", Fac, F$GETSYI("BOOTTIME") )
+$ wso ""
 $ CALL AuditStep "SHOW SYSTEM /HEADER /NOPROCESS /GRAND_TOTAL"
+$ !
 $ CALL AuditStep "SHOW NETWORK" "NOPAGE"
 $ CALL AuditStep "SHOW CLUSTER" "NOPAGE"
 $ CALL AuditStep "SHOW ERROR"   "NOPAGE"
@@ -442,11 +569,12 @@ $ IF F$TYPE( QUESTALL$THRESHOLD ) .EQS. "" THEN QUESTALL$THRESHOLD == 500
 $ CALL AuditStep "@''DD'QUE$STALLED ''QUESTALL$THRESHOLD' TRUE" "" "@''DD'QUE$STALLED ''QUESTALL$THRESHOLD'"
 $ !
 $ CALL AuditStep "V$AUTH LIST * /BRIEF" "NOPAGE" "AUTH LIST * /BRIEF"
-$ CALL AuditStep "V$AUTH LIST * /FULL"  "NOPAGE" "AUTH LIST * /FULL"
+$ CALL AuditStep "V$AUTH LIST * /FULL"  ""       "AUTH LIST * /FULL"
 $ !
 $ ! ========================
 $ ! II. System Configuration -- Hardware, Storage, Cluster and Shadowing/Controller
 $ CALL AuditStep "SHOW DEVICE D /MOUNTED"
+$ CALL DiskSpace
 $ !
 $ CALL AuditStep "SHOW CPU /FULL"
 $ CALL AuditStep "SHOW MEMORY /FULL"
@@ -519,14 +647,22 @@ $ CALL AuditStep "SHOW ACCOUNTING"
 $ CALL AuditStep "V$DIR SYS$MANAGER:ACCOUNTNG*.DAT;*" "NOPAGE" "DIRECTORY SYS$MANAGER:ACCOUNTNG*.DAT;*"
 $ !
 $ ! VI.d. Other System (parameters)
-$ CALL AuditStep "V$SYSGEN SHOW /SYS"           ""       "SYSGEN SHOW /SYS"
-$ CALL AuditStep "V$SYSGEN SHOW /CLUSTER"       "NOPAGE" "SYSGEN SHOW /CLUSTER"
-$ CALL AuditStep "V$SYSGEN SHOW SCS*"           "NOPAGE" "SYSGEN SHOW SCS*"
-$ CALL AuditStep "V$SYSGEN SHOW /MAJOR"         "NOPAGE" "SYSGEN SHOW /MAJOR"
-$ CALL AuditStep "V$SYSGEN SHOW NISCS*"         "NOPAGE" "SYSGEN SHOW NISCS*"
-$ CALL AuditStep "V$SYSGEN SHOW LGI*"           ""       "SYSGEN SHOW LGI*"   ! "/LGI" gets an extra <FF> in wrong place...
-$ CALL AuditStep "V$SYSGEN SHOW RMS*"           "NOPAGE" "SYSGEN SHOW RMS*"
-$ CALL AuditStep "V$SYSGEN SHOW UAFALTERNATE"   "NOPAGE" "SYSGEN SHOW UAFALTERNATE"
+$ CALL AuditStep "V$SYSGEN SHOW /SYS"               ""       "SYSGEN SHOW /SYS"
+$ CALL AuditStep "V$SYSGEN SHOW /CLUSTER"           "NOPAGE" "SYSGEN SHOW /CLUSTER"
+$ CALL AuditStep "V$SYSGEN SHOW SCS*"               "NOPAGE" "SYSGEN SHOW SCS*"
+$ CALL AuditStep "V$SYSGEN SHOW /MAJOR"             "NOPAGE" "SYSGEN SHOW /MAJOR"
+$ CALL AuditStep "V$SYSGEN SHOW NISCS*"             "NOPAGE" "SYSGEN SHOW NISCS*"
+$ CALL AuditStep "V$SYSGEN SHOW LGI*"               ""       "SYSGEN SHOW LGI*"   ! "/LGI" gets an extra <FF> in wrong place...
+$ CALL AuditStep "V$SYSGEN SHOW RMS*"               "NOPAGE" "SYSGEN SHOW RMS*"
+$ CALL AuditStep "V$SYSGEN SHOW UAFALTERNATE"       "NOPAGE" "SYSGEN SHOW UAFALTERNATE"
+$ !
+$ ! Show Daylight/Standard time-change settings:
+$ CALL AuditStep "V$SYSGEN SHOW AUTO_DLIGHT_SAV" "" "SYSGEN SHOW AUTO_DLIGHT_SAV"
+$ ! Don't actually invoke UTC$TIME_SETUP.COM in the AuditStep, as its SYS$OUTPUT redirection
+$ !  handling is intransigent!  Instead, SPAWN it so that output can be captured in file; the
+$ !  call to AuditStep just plants another header-line in the top-level report file:
+$ CALL AuditStep "!«!»''V$UTCTIME'" "NOPAGE" "''V$UTCTIME'"
+$ SPAWN /NOLOG /NOWAIT /OUTPUT='VA$UTCreport' 'V$UTCTIME'
 $ !
 $ ! VI.e. & f. Facility and Policy Audits -- manual audit, conversations with on-site team
 $ !
@@ -622,7 +758,7 @@ $ !
 $CLE$:
 $ ! Convert embedded <CR><LF> to new-lines, then trim-trailing...
 $ IF OutToFile
-$ THEN DEASSIGN /NOLOG /PROCESS sys$output
+$ THEN V$DEASSIGN /PROCESS sys$output
 $      CleanCRLF = "REPLACECRLF"
 $      CleanTrim = "TRIMTRAIL"
 $      fsCRLF    = F$PARSE("''Fac'_''CleanCRLF'","''DD'.TPU",,,"SYNTAX_ONLY")
@@ -643,7 +779,11 @@ $ ! ========================
 $ !
 $REV$:   ! Review the Audit Report File
 $ IF OutToFile
-$ THEN DEASSIGN /NOLOG /PROCESS sys$output
+$ THEN V$DEASSIGN /PROCESS sys$output
+$      msg = "=== " + Fac + " reports "
+$      len = VA$PgWi - F$LENGTH( msg )
+$      wso F$FAO( "!/!AS !#*=", msg, len )
+$      V$DIR /SINCE /SIZE=ALL 'Fac'_'Node'*.*;0
 $      wso ""
 $      Rfile = F$PARSE(VA$AuditReport,,,"NAME","SYNTAX_ONLY") + F$PARSE(VA$AuditReport,,,"TYPE","SYNTAX_ONLY")
 $      READ sys$command Answer /END_OF_FILE=Done -
@@ -653,14 +793,14 @@ $      GOTO 'F$EXTRACT(0,1,Answer)'$
 $ !
 $T$:    ! Type/display Audit Report File
 $TYP$:
-$      IF OutToFile THEN DEASSIGN /NOLOG /PROCESS sys$output
+$      IF OutToFile THEN V$DEASSIGN /PROCESS sys$output
 $      DEFINE /USER_MODE sys$input sys$command
 $      TYPE /PAGE=SAVE=5 'VA$AuditReport'
 $      GOTO Done
 $ !
 $E$:    ! Edit Audit Report File
 $EDI$:
-$      IF OutToFile THEN DEASSIGN /NOLOG /PROCESS sys$output
+$      IF OutToFile THEN V$DEASSIGN /PROCESS sys$output
 $      IF F$TYPE(ked) .EQS. "STRING" THEN edit = "@com:ked.com"  !(LMR tweak, all others use EDIT /EVE)
 $      DEFINE /USER_MODE sys$input sys$command
 $      EDIT 'VA$AuditReport'
@@ -684,7 +824,7 @@ $RES$:
 $ V$BckSSN = V$BckSSN + ".BCK"
 $ IF ( F$SEARCH("''V$BckSSN'") .NES. "" )
 $ THEN BACKUP /LOG 'V$BckSSN' /SAVE_SET []*.* /NEW_VERSION
-$ ELSE WRITE sys$error F$FAO( "%!AS-E-FNF, cannot find file !AS", V$BckSSN )
+$ ELSE wserr F$FAO( "%!AS-E-FNF, cannot find file !AS", V$BckSSN )
 $ ENDIF
 $ GOTO Done
 $ !
@@ -726,10 +866,11 @@ $ unzip 'V$ZipArc'
 $ GOTO Done
 $ !
 $ ! ========================
-$ !
+$ !
 $Done:
 $ SET NOON
-$ IF OutToFile THEN DEASSIGN /NOLOG /PROCESS sys$output
+$ IF OutToFile THEN V$DEASSIGN /PROCESS sys$output
+$ !
 $ IF F$TYPE(prv)             .NES. "" THEN prv = F$SETPRV(prv)
 $ IF F$TYPE(VA$DECnetInst)   .NES. "" THEN DELETE /SYMBOL /GLOBAL VA$DECnetInst
 $ IF F$TYPE(VA$TCPIPInst)    .NES. "" THEN DELETE /SYMBOL /GLOBAL VA$TCPIPInst

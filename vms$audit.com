@@ -26,7 +26,8 @@ $ !  20-MAR-2015 : Add progress report (wserr) to track ANALYZE /AUDIT
 $ !                on really big Security Audit Journal files; these
 $ !                can take several minutes (each) to complete on
 $ !                production systems which do not manage Audit Journals
-$ !                effectively.
+$ !                effectively. Also, add /SELECT=SYSTEM=NODE= to constrain
+$ !                ANALYZE /AUDIT to *this* node.
 $ !  17-MAR-2015 : Add SHOW INTRUSION and ANALYZE /AUDIT /SUMMARY, with
 $ !                AnalyzeAudit and FindSAJournal routines.
 $ !  16-MAR-2015 : Add UAF$DETAILED_ANALYSIS.COM to Backup and Zip lists.
@@ -93,18 +94,20 @@ $ !
 $ !
 $ !
 $AnalyzeAudit:  SUBROUTINE
-$ ! P1 = ANALYZE /AUDIT event type
-$ ! P2 = date for /SINCE=
-$ ! P3 = Security Audit Journal filespec (discovered by FindSAJournal)
+$ ! P1 = Security Audit Journal filespec (discovered by FindSAJournal)
+$ ! P2 = ANALYZE /AUDIT event type
+$ ! P3 = Date for /SINCE
+$ ! P4 : Nodename
 $ ON CONTROL_Y THEN GOSUB AACtrl_Y
 $ ON ERROR THEN EXIT %X2C
 $ !
-$ AnAudit  = "ANALYZE /AUDIT ''P3' /SINCE=''P2' /NOINTERACTIVE /SUMMARY=(PLOT,COUNT)"
+$ AnAudit  = "ANALYZE /AUDIT ''P1' /EVENT_TYPE=(''P2') /SINCE=''P3' " -
+           + "/SELECT=(SYSTEM=NODE=''P4') /SUMMARY=(PLOT,COUNT) /NOINTERACTIVE"
 $ AnAtitle = "ANALYZE /AUDIT /EVENT_TYPE=(''P1')"
 $ now      = F$CVTIME("","ABSOLUTE","TIME")
 $ wserr F$FAO( "%!AS-I-PROGRESS, [!AS] !AS...", -
                Fac, F$CVTIME("","ABSOLUTE","TIME"), AnAtitle )
-$ CALL AuditStep "''AnAudit' /EVENT_TYPE=(''P1')" "NOPAGE" "''AnAtitle'"
+$ CALL AuditStep "''AnAudit'" "NOPAGE" "''AnAtitle'"
 $ EXIT 1
 $ !
 $AACtrl_Y:
@@ -482,7 +485,7 @@ $ SET CONTROL=(Y,T)
 $ ON CONTROL THEN GOSUB Ctrl_Y
 $ ON ERROR THEN GOTO Done
 $ !
-$ ProcVersion = "V1.9-01 (20-Mar-2015)"
+$ ProcVersion = "V1.10-01 (20-Mar-2015)"
 $ !
 $ Proc   = F$ENVIRONMENT("PROCEDURE")
 $ Fac    = F$PARSE(Proc,,,"NAME","SYNTAX_ONLY")
@@ -630,10 +633,10 @@ $ !
 $ CALL AuditStep "SHOW AUDIT /ALL" "NOPAGE"
 $ CALL AuditStep "SHOW INTRUSION"
 $ CALL FindSAJournal  ! sets global VA$SAJournal
-$ CALL AnalyzeAudit "BREAKIN" "''FirstofLastMonth'" "''VA$SAJournal'"
-$ CALL AnalyzeAudit "LOGFAIL" "''FirstofLastMonth'" "''VA$SAJournal'"
-$ CALL AnalyzeAudit "SYSUAF"  "''FirstofLastMonth'" "''VA$SAJournal'"
-$ CALL AnalyzeAudit "ALL"     "''FirstofLastMonth'" "''VA$SAJournal'"
+$ CALL AnalyzeAudit "''VA$SAJournal'" "BREAKIN" "''FirstofLastMonth'" "''Node'"
+$ CALL AnalyzeAudit "''VA$SAJournal'" "LOGFAIL" "''FirstofLastMonth'" "''Node'"
+$ CALL AnalyzeAudit "''VA$SAJournal'" "SYSUAF"  "''FirstofLastMonth'" "''Node'"
+$ CALL AnalyzeAudit "''VA$SAJournal'" "ALL"     "''FirstofLastMonth'" "''Node'"
 $ !
 $ CALL AuditStep "SHOW ACCOUNTING" ""
 $ CALL AuditStep "V$DIR SYS$SYSTEM:LMF$*.LDB" "NOPAGE" "DIRECTORY SYS$SYSTEM:LMF$*.LDB"

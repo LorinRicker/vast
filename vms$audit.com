@@ -22,6 +22,11 @@ $ !                      | REVIEW | TYPE | EDIT | HELP ]
 $ !
 $ ! ========================
 $ ! Release History:
+$ !  20-MAR-2015 : Add progress report (wserr) to track ANALYZE /AUDIT
+$ !                on really big Security Audit Journal files; these
+$ !                can take several minutes (each) to complete on
+$ !                production systems which do not manage Audit Journals
+$ !                effectively.
 $ !  17-MAR-2015 : Add SHOW INTRUSION and ANALYZE /AUDIT /SUMMARY, with
 $ !                AnalyzeAudit and FindSAJournal routines.
 $ !  16-MAR-2015 : Add UAF$DETAILED_ANALYSIS.COM to Backup and Zip lists.
@@ -96,6 +101,9 @@ $ ON ERROR THEN EXIT %X2C
 $ !
 $ AnAudit  = "ANALYZE /AUDIT ''P3' /SINCE=''P2' /NOINTERACTIVE /SUMMARY=(PLOT,COUNT)"
 $ AnAtitle = "ANALYZE /AUDIT /EVENT_TYPE=(''P1')"
+$ now      = F$CVTIME("","ABSOLUTE","TIME")
+$ wserr F$FAO( "%!AS-I-PROGRESS, [!AS] !AS...", -
+               Fac, F$CVTIME("","ABSOLUTE","TIME"), AnAtitle )
 $ CALL AuditStep "''AnAudit' /EVENT_TYPE=(''P1')" "NOPAGE" "''AnAtitle'"
 $ EXIT 1
 $ !
@@ -474,7 +482,7 @@ $ SET CONTROL=(Y,T)
 $ ON CONTROL THEN GOSUB Ctrl_Y
 $ ON ERROR THEN GOTO Done
 $ !
-$ ProcVersion = "V1.8-01 (17-Mar-2015)"
+$ ProcVersion = "V1.9-01 (20-Mar-2015)"
 $ !
 $ Proc   = F$ENVIRONMENT("PROCEDURE")
 $ Fac    = F$PARSE(Proc,,,"NAME","SYNTAX_ONLY")

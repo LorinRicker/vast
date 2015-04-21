@@ -180,7 +180,7 @@ $      GOTO writesubh
 $passhist:
 $      label = "ignore password histories:"
 $      GOTO writesubh
-$pssdict:
+$passdict:
 $      label = "ignore password dictionary checking:"
 $      GOTO writesubh
 $passlock:

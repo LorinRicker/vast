@@ -22,6 +22,10 @@ $ !                      | REVIEW | TYPE | EDIT | HELP ]
 $ !
 $ ! ========================
 $ ! Release History:
+$ !  21-APR-2015 : Corrected VMS version check to > v8.3 for use of
+$ !                SEARCH /STATISTICS=SYMBOL.
+$ !                Also found/fixed a label spelling error, 'pssdict'
+$ !                for 'passdict', in UAF$DETAILED_ANALYSIS.COM.
 $ !  20-MAR-2015 : Add progress report (wserr) to track ANALYZE /AUDIT
 $ !                on really big Security Audit Journal files; these
 $ !                can take several minutes (each) to complete on
@@ -383,8 +387,8 @@ $           @'DD'UAF$DETAILED_ANALYSIS 'VA$UAFfull'
 $      ELSE ! post AUTH LIST /BRIEF: quick analysis
 $           RENAME /NOLOG []SYSUAF.LIS 'VA$UAFbrief'
 $           ! Not very modular, but let's do some account analysis here, too:
-$           IF ( VMSver .GES. "V8.0" ) ! PIPE command in >= VMS v7.1 ...
-$                                      ! and SEARCH /STATISTICS=SYMBOL in >= v8.0
+$           IF ( VMSver .GTS. "V8.3" ) ! PIPE command in >= VMS v7.1 ...
+$                                      ! and SEARCH /STATISTICS=SYMBOL in >= v8.3-1H1
 $           THEN @'DD'UAF$QUICK_ANALYSIS 'VA$UAFbrief'
 $           ELSE wserr F$FAO( "%!AS-W-OLDVMS, PIPE &/or SEARCH/STAT=SYMBOL unavailable (pre-v!AS)", Fac, "7.1/8.0" )
 $                wserr "-W-NOTRUN, cannot execute @UAF$QUICK_ANALYSIS"
@@ -485,7 +489,7 @@ $ SET CONTROL=(Y,T)
 $ ON CONTROL THEN GOSUB Ctrl_Y
 $ ON ERROR THEN GOTO Done
 $ !
-$ ProcVersion = "V1.10-01 (20-Mar-2015)"
+$ ProcVersion = "V1.12-01 (21-Apr-2015)"
 $ !
 $ Proc   = F$ENVIRONMENT("PROCEDURE")
 $ Fac    = F$PARSE(Proc,,,"NAME","SYNTAX_ONLY")

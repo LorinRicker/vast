@@ -230,11 +230,11 @@ $ wso "All processing done"
 $ GOTO abort
 $ !
 $Abort_Y:
-$ wso "User abort"
-$ CLOSE /NOLOG outfile
+$ wso "%UAF$DETAILED_ANALYSIS-F-ABORT, user abort"
 $ !
 $Cleanup:
 $Abort:
+$ CLOSE /NOLOG outfile
 $ CLOSE /NOLOG infull
 $ CLOSE /NOLOG outfull
 $ IF F$SEARCH( uaftemp )   .NES. NULL THEN DELETE /NOLOG 'uaftemp';*

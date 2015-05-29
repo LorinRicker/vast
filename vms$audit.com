@@ -22,6 +22,11 @@ $ !                      | REVIEW | TYPE | EDIT | HELP ]
 $ !
 $ ! ========================
 $ ! Release History:
+$ !  29-MAY-2015 : Tweaks to error handling in UAF$QUICK_ANALYSIS.COM
+$ !                and UAF$DETAILED_ANALYSIS.COM.
+$ !  12-MAY-2015 : Corrected ANALYZE /AUDIT /SELECT=(SYSTEM=name=''P4')
+$ !                typo (was /SELECT=(SYSTEM=NODE=''P4)) -- bug!
+$ !                Also enhance report disposition with FTP.
 $ !  21-APR-2015 : Corrected VMS version check to > v8.3 for use of
 $ !                SEARCH /STATISTICS=SYMBOL.
 $ !                Also found/fixed a label spelling error, 'pssdict'
@@ -106,8 +111,8 @@ $ ON CONTROL_Y THEN GOSUB AACtrl_Y
 $ ON ERROR THEN EXIT %X2C
 $ !
 $ AnAudit  = "ANALYZE /AUDIT ''P1' /EVENT_TYPE=(''P2') /SINCE=''P3' " -
-           + "/SELECT=(SYSTEM=NODE=''P4') /SUMMARY=(PLOT,COUNT) /NOINTERACTIVE"
-$ AnAtitle = "ANALYZE /AUDIT /EVENT_TYPE=(''P1')"
+           + "/SELECT=(SYSTEM=name=''P4') /SUMMARY=(PLOT,COUNT) /NOINTERACTIVE"
+$ AnAtitle = "ANALYZE /AUDIT /EVENT_TYPE=(''P2')"
 $ now      = F$CVTIME("","ABSOLUTE","TIME")
 $ wserr F$FAO( "%!AS-I-PROGRESS, [!AS] !AS...", -
                Fac, F$CVTIME("","ABSOLUTE","TIME"), AnAtitle )
@@ -489,7 +494,7 @@ $ SET CONTROL=(Y,T)
 $ ON CONTROL THEN GOSUB Ctrl_Y
 $ ON ERROR THEN GOTO Done
 $ !
-$ ProcVersion = "V1.12-01 (21-Apr-2015)"
+$ ProcVersion = "V1.14-01 (29-May-2015)"
 $ !
 $ Proc   = F$ENVIRONMENT("PROCEDURE")
 $ Fac    = F$PARSE(Proc,,,"NAME","SYNTAX_ONLY")
@@ -868,10 +873,15 @@ $      V$DIR /SINCE /SIZE=ALL 'Fac'_'Node'*.*;0
 $      wso ""
 $      Rfile = F$PARSE(VA$AuditReport,,,"NAME","SYNTAX_ONLY") + F$PARSE(VA$AuditReport,,,"TYPE","SYNTAX_ONLY")
 $      READ sys$command Answer /END_OF_FILE=Done -
-         /PROMPT="''Rfile' -- Type it or Edit it [T/e]? "
-$      Answer = F$PARSE(Answer,"TYPE",,"NAME","SYNTAX_ONLY")
+         /PROMPT="''Rfile' -- FTP, Type or Edit it [F/t/e]? "
+$      Answer = F$PARSE(Answer,"FTP",,"NAME","SYNTAX_ONLY")
 $      GOTO 'F$EXTRACT(0,1,Answer)'$
 $ !
+$F$:    ! FTP Audit Report File to home-base (PARSEC)
+$FTP$:
+$      DEFINE /USER_MODE sys$input sys$command
+$      FTP class8.parsec.com /USER=lricker
+$      GOTO Done
 $T$:    ! Type/display Audit Report File
 $TYP$:
 $      IF OutToFile THEN V$DEASSIGN /PROCESS sys$output
@@ -949,6 +959,9 @@ $ !
 $ ! ========================
 $ !
 $Done:
+$ wso ""
+$ wso F$FAO( "%!AS-I-DONE, cleanup...", Fac )
+$ wso ""
 $ SET NOON
 $ IF OutToFile THEN V$DEASSIGN /PROCESS sys$output
 $ !

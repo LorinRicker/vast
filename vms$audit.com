@@ -22,6 +22,9 @@ $ !                      | REVIEW | TYPE | EDIT | HELP ]
 $ !
 $ ! ========================
 $ ! Release History:
+$ !  16-JUN-2015 : Summarize sys-errorlog for past 30 days (RSM).
+$ !                Remove audit-summary for SYSUAF events.
+$ !                Reordered a few report entries; bug fixes.
 $ !  29-MAY-2015 : Tweaks to error handling in UAF$QUICK_ANALYSIS.COM
 $ !                and UAF$DETAILED_ANALYSIS.COM.
 $ !  12-MAY-2015 : Corrected ANALYZE /AUDIT /SELECT=(SYSTEM=name=''P4')
@@ -105,14 +108,15 @@ $ !
 $AnalyzeAudit:  SUBROUTINE
 $ ! P1 = Security Audit Journal filespec (discovered by FindSAJournal)
 $ ! P2 = ANALYZE /AUDIT event type
-$ ! P3 = Date for /SINCE
-$ ! P4 : Nodename
+$ ! P3 = Summary type (plot,count)
+$ ! P4 = Date for /SINCE
+$ ! P5 : Nodename
 $ ON CONTROL_Y THEN GOSUB AACtrl_Y
 $ ON ERROR THEN EXIT %X2C
 $ !
-$ AnAudit  = "ANALYZE /AUDIT ''P1' /EVENT_TYPE=(''P2') /SINCE=''P3' " -
-           + "/SELECT=(SYSTEM=name=''P4') /SUMMARY=(PLOT,COUNT) /NOINTERACTIVE"
-$ AnAtitle = "ANALYZE /AUDIT /EVENT_TYPE=(''P2')"
+$ AnAudit  = "ANALYZE /AUDIT ''P1' /EVENT_TYPE=(''P2') /SUMMARY=(''P3') /NOINTERACTIVE " -
+           + "/SINCE=''P4' /SELECT=(SYSTEM=name=''P5')"
+$ AnAtitle = "ANALYZE /AUDIT /EVENT_TYPE=(''P2') /SINCE=''P4'"
 $ now      = F$CVTIME("","ABSOLUTE","TIME")
 $ wserr F$FAO( "%!AS-I-PROGRESS, [!AS] !AS...", -
                Fac, F$CVTIME("","ABSOLUTE","TIME"), AnAtitle )
@@ -120,7 +124,7 @@ $ CALL AuditStep "''AnAudit'" "NOPAGE" "''AnAtitle'"
 $ EXIT 1
 $ !
 $AACtrl_Y:
-$ RETURN %X2C
+$ EXIT %X2C
 $ ENDSUBROUTINE  ! AnAudit
 $ !
 $FindSAJournal:  SUBROUTINE
@@ -155,9 +159,9 @@ $ wso "%''Fac'-I-USING_JOURNAL, VA$SAJournal == ''VA$SAJournal'"
 $ EXIT 1
 $ !
 $FSAJCtrl_Y:
-$ RETURN %X2C
+$ EXIT %X2C
 $ ENDSUBROUTINE  ! FindSAJournal
-
+$ !
 $DiskSpace:  SUBROUTINE
 $ ON CONTROL_Y THEN GOSUB DSCtrl_Y
 $ ON ERROR THEN EXIT %X2C
@@ -199,7 +203,7 @@ $ wso ""
 $ EXIT 1
 $ !
 $DSCtrl_Y:
-$ RETURN %X2C
+$ EXIT %X2C
 $ ENDSUBROUTINE  ! DiskSpace
 $ !
 $TimeStamp:  SUBROUTINE
@@ -213,7 +217,7 @@ $ VA$TimeStamp == "at "  + F$CVTIME(P1,"ABSOLUTE","HOUR")    -
                 + ", "   + F$CVTIME(P1,"ABSOLUTE","DATE")
 $ EXIT 1
 $TSCtrl_Y:
-$ RETURN %X2C
+$ EXIT %X2C
 $ ENDSUBROUTINE  ! TimeStamp
 $ !
 $NetInstalled:  SUBROUTINE
@@ -238,7 +242,7 @@ $ Indent = ( VA$PgWi - P1L ) / 2
 $ wso F$FAO( "!#* !AS", Indent, P1 )
 $ EXIT 1
 $CLCtrl_Y:
-$ RETURN %X2C
+$ EXIT %X2C
 $ ENDSUBROUTINE  ! CenterLine
 $ !
 $ReportHeader:  SUBROUTINE
@@ -273,7 +277,7 @@ $ wso ""
 $ wso ""
 $ EXIT 1
 $RHCtrl_Y:
-$ RETURN %X2C
+$ EXIT %X2C
 $ ENDSUBROUTINE  ! ReportHeader
 $ !
 $ReportFooter:  SUBROUTINE
@@ -296,7 +300,7 @@ $ wso ""
 $ wso VA$DblDashes
 $ EXIT 1
 $RFCtrl_Y:
-$ RETURN %X2C
+$ EXIT %X2C
 $ ENDSUBROUTINE  ! ReportFooter
 $ !
 $ !
@@ -318,7 +322,7 @@ $      VA$PgStr == ""
 $ ENDIF
 $ EXIT 1
 $PgCtrl_Y:
-$ RETURN %X2C
+$ EXIT %X2C
 $ ENDSUBROUTINE  ! Paginate
 $ !
 $Header:  SUBROUTINE
@@ -328,7 +332,10 @@ $ !
 $ ON CONTROL_Y THEN GOSUB HdrCtrl_Y
 $ ON ERROR THEN EXIT %X2C
 $ P1L = F$LENGTH(P1)
-$ LPadP1 = ( VA$PgWi - P1L ) / 2
+$ IF ( VA$PgWi .GT. P1L )
+$ THEN LPadP1 = ( VA$PgWi - P1L ) / 2
+$ ELSE LPadP1 = 1
+$ ENDIF
 $ CALL TimeStamp ""   ! global VA$TimeStamp
 $ TSL = F$LENGTH(VA$TimeStamp)
 $ LPadNow = ( VA$PgWi - TSL ) / 2
@@ -352,7 +359,7 @@ $ wso ""
 $ wso ""
 $ EXIT 1
 $HdrCtrl_Y:
-$ RETURN %X2C
+$ EXIT %X2C
 $ ENDSUBROUTINE  ! Header
 $ !
 $Footer:  SUBROUTINE
@@ -365,7 +372,7 @@ $ wso ""
 $ wso ""
 $ EXIT 1
 $FtrCtrl_Y:
-$ RETURN %X2C
+$ EXIT %X2C
 $ ENDSUBROUTINE  ! Footer
 $ !
 $UAFsetup:  SUBROUTINE
@@ -440,7 +447,7 @@ $ EXIT 1
 $ASDone:
 $ EXIT %X2C
 $ASCtrl_Y:
-$ RETURN %X2C
+$ EXIT %X2C
 $ ENDSUBROUTINE  ! AuditStep
 $ !
 $PreCleaner:  SUBROUTINE
@@ -456,7 +463,7 @@ $ ENDIF
 $ EXIT 1
 $ !
 $PClCtrl_Y:
-$ RETURN %X2C
+$ EXIT %X2C
 $ ENDSUBROUTINE  ! PreCleaner
 $ !
 $Cleaner:  SUBROUTINE
@@ -484,17 +491,17 @@ $ ENDIF
 $ EXIT 1
 $ !
 $ClCtrl_Y:
-$ RETURN %X2C
+$ EXIT %X2C
 $ ENDSUBROUTINE  ! Cleaner
 $ !
 $ !
 $ ! ========================
-$MAIN:
+$MAIN:                                                           ! 'F$VERIFY(0)'
 $ SET CONTROL=(Y,T)
 $ ON CONTROL THEN GOSUB Ctrl_Y
 $ ON ERROR THEN GOTO Done
 $ !
-$ ProcVersion = "V1.14-01 (29-May-2015)"
+$ ProcVersion = "V1.15-01 (16-Jun-2015)"
 $ !
 $ Proc   = F$ENVIRONMENT("PROCEDURE")
 $ Fac    = F$PARSE(Proc,,,"NAME","SYNTAX_ONLY")
@@ -604,6 +611,8 @@ $ !
 $ !
 $ ! ========================
 $ !
+$ CALL ReportHeader "''Fac'" "''Proc'" "''ProcVersion'" "''Node'" "''VA$TimeStamp'" "''User'"
+$ !
 $ IF ( VMSver .GES. "V7.1" )         ! PIPE command in VMS v7.1 and higher...
 $ THEN CALL NetInstalled "DECnet"
 $      CALL NetInstalled "TCP/IP"
@@ -612,8 +621,6 @@ $ ELSE VA$DECnetInst   == "FALSE"   ! ...get no network report details for VMS <
 $      VA$TCPIPInst    == "FALSE"
 $      VA$MultinetInst == "FALSE"
 $ ENDIF
-$ !
-$ CALL ReportHeader "''Fac'" "''Proc'" "''ProcVersion'" "''Node'" "''VA$TimeStamp'" "''User'"
 $ !
 $ ! ========================
 $ ! I. System Summaries:
@@ -624,7 +631,10 @@ $ CALL AuditStep "SHOW SYSTEM /HEADER /NOPROCESS /GRAND_TOTAL"
 $ !
 $ CALL AuditStep "SHOW NETWORK" "NOPAGE"
 $ CALL AuditStep "SHOW CLUSTER" "NOPAGE"
-$ CALL AuditStep "SHOW ERROR"   "NOPAGE"
+$ !
+$ CALL AuditStep "SHOW ERROR"
+$ CALL AuditStep "ANALYZE /ERROR /ELV TRANSLATE /SUMMARY /SINCE=''FirstofLastMonth' SYS$ERRORLOG:ERRLOG.SYS" -
+    "NOPAGE" "ANALYZE /ERROR /SUMMARY /SINCE=''FirstofLastMonth'"
 $ !
 $ CALL AuditStep "SHOW MEMORY /FILES"
 $ CALL AuditStep "V$DIR SYS$SYSTEM:*FILE.SYS;*,*DUMP*.DMP;*" "NOPAGE" "DIRECTORY SYS$SYSTEM:*FILE.SYS,*DUMP*.DMP"
@@ -639,13 +649,13 @@ $      CALL AuditStep "V$DIR SYSUAF,RIGHTSLIST"            "NOPAGE" "DIRECTORY S
 $ ELSE CALL AuditStep "V$DIR SYS$SYSTEM:SYSUAF.DAT;*,RIGHTSLIST.DAT;*" "" "DIRECTORY SYS$SYSTEM:SYSUAF,RIGHTSLIST"
 $ ENDIF
 $ !
-$ CALL AuditStep "SHOW AUDIT /ALL" "NOPAGE"
 $ CALL AuditStep "SHOW INTRUSION"
+$ CALL AuditStep "SHOW AUDIT /ALL" "NOPAGE"
 $ CALL FindSAJournal  ! sets global VA$SAJournal
-$ CALL AnalyzeAudit "''VA$SAJournal'" "BREAKIN" "''FirstofLastMonth'" "''Node'"
-$ CALL AnalyzeAudit "''VA$SAJournal'" "LOGFAIL" "''FirstofLastMonth'" "''Node'"
-$ CALL AnalyzeAudit "''VA$SAJournal'" "SYSUAF"  "''FirstofLastMonth'" "''Node'"
-$ CALL AnalyzeAudit "''VA$SAJournal'" "ALL"     "''FirstofLastMonth'" "''Node'"
+$ CALL AnalyzeAudit "''VA$SAJournal'" "BREAKIN" "PLOT"  "''FirstofLastMonth'" "''Node'"
+$ CALL AnalyzeAudit "''VA$SAJournal'" "LOGFAIL" "PLOT"  "''FirstofLastMonth'" "''Node'"
+$ !! CALL AnalyzeAudit "''VA$SAJournal'" "SYSUAF"  "PLOT"  "''FirstofLastMonth'" "''Node'"
+$ CALL AnalyzeAudit "''VA$SAJournal'" "ALL"     "COUNT" "''FirstofLastMonth'" "''Node'"
 $ !
 $ CALL AuditStep "SHOW ACCOUNTING" ""
 $ CALL AuditStep "V$DIR SYS$SYSTEM:LMF$*.LDB" "NOPAGE" "DIRECTORY SYS$SYSTEM:LMF$*.LDB"
@@ -666,10 +676,6 @@ $ CALL AuditStep "SHOW CPU /FULL"
 $ CALL AuditStep "SHOW MEMORY /FULL"
 $ !
 $ CALL AuditStep "SHOW DEVICE"
-$ !
-$ CALL AuditStep "V$LANCP SHOW DEVICE"                  ""       "LANCP SHOW DEVICE"
-$ CALL AuditStep "V$LANCP SHOW CONFIGURATION"           "NOPAGE" "LANCP SHOW CONFIGURATION"
-$ CALL AuditStep "V$LANCP SHOW DEVICE /CHARACTERISTICS" "NOPAGE" "LANCP SHOW DEVICE /CHARACTERISTICS"
 $ !
 $Dsk0:
 $ dsk = F$DEVICE("*","DISK","GENERIC_DK",0)
@@ -761,6 +767,10 @@ $ ! ========================
 $ !
 $ ! VII. Network
 $ CALL AuditStep "SHOW NETWORK"
+$ !
+$ CALL AuditStep "V$LANCP SHOW DEVICE"                  ""       "LANCP SHOW DEVICE"
+$ CALL AuditStep "V$LANCP SHOW CONFIGURATION"           "NOPAGE" "LANCP SHOW CONFIGURATION"
+$ CALL AuditStep "V$LANCP SHOW DEVICE /CHARACTERISTICS" "NOPAGE" "LANCP SHOW DEVICE /CHARACTERISTICS"
 $ !
 $!! $ wserr ""
 $!! $ READ sys$command Answer /END_OF_FILE=Done -
@@ -982,7 +992,7 @@ $ !       once defined, used as a user-login convenience.
 $ EXIT
 $ !
 $Ctrl_Y:
-$ RETURN %X2C
+$ EXIT %X2C
 $ !
 $ !
 $ ! ========================

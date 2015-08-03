@@ -22,6 +22,7 @@ $ !                      | REVIEW | TYPE | EDIT | HELP ]
 $ !
 $ ! ========================
 $ ! Release History:
+$ !  03-AUG-2015 : Add DIRECTORY SYS$ERRORLOG:ERRLOG.* file check.
 $ !  16-JUN-2015 : Summarize sys-errorlog for past 30 days (RSM).
 $ !                Remove audit-summary for SYSUAF events.
 $ !                Reordered a few report entries; bug fixes.
@@ -501,7 +502,7 @@ $ SET CONTROL=(Y,T)
 $ ON CONTROL THEN GOSUB Ctrl_Y
 $ ON ERROR THEN GOTO Done
 $ !
-$ ProcVersion = "V1.15-01 (16-Jun-2015)"
+$ ProcVersion = "V1.16-01 (03-Aug-2015)"
 $ !
 $ Proc   = F$ENVIRONMENT("PROCEDURE")
 $ Fac    = F$PARSE(Proc,,,"NAME","SYNTAX_ONLY")
@@ -633,6 +634,8 @@ $ CALL AuditStep "SHOW NETWORK" "NOPAGE"
 $ CALL AuditStep "SHOW CLUSTER" "NOPAGE"
 $ !
 $ CALL AuditStep "SHOW ERROR"
+$ CALL AuditStep "V$DIR SYS$ERRORLOG:ERRLOG.SYS,SYS$ERRORLOG:ERRLOG.OLD*" -
+    "NOPAGE" "DIRECTORY SYS$ERRORLOG:ERRLOG.SYS,SYS$ERRORLOG:ERRLOG.OLD*"
 $ CALL AuditStep "ANALYZE /ERROR /ELV TRANSLATE /SUMMARY /SINCE=''FirstofLastMonth' SYS$ERRORLOG:ERRLOG.SYS" -
     "NOPAGE" "ANALYZE /ERROR /SUMMARY /SINCE=''FirstofLastMonth'"
 $ !

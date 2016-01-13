@@ -1,6 +1,6 @@
 $ ! VMS$AUDIT.COM --                                               'F$VERIFY(0)'
 $ !
-$ ! Copyright © 2014-2015 by Lorin Ricker.  All rights reserved, with acceptance,
+$ ! Copyright © 2014-2016 by Lorin Ricker.  All rights reserved, with acceptance,
 $ ! use, modification and/or distribution permissions as granted and controlled
 $ ! by and under the GPL described herein.
 $ !
@@ -22,6 +22,16 @@ $ !                      | REVIEW | TYPE | EDIT | HELP ]
 $ !
 $ ! ========================
 $ ! Release History:
+$ !  12-JAN-2016 : Add parameters for FTP/Edit/Type to VMS$AUDIT.CONFIG file;
+$ !                see VMS$AUDIT_LRICKER.CONFIG and VMS$AUDIT_TEMPLATE.CONFIG
+$ !                as exemplars. Also renamed local symbol User to VA$User.
+$ !  11-JAN-2016 : Deprecate (remove) the UAF$(QUICK|DETAILED)_ANALYSIS.COM
+$ !                invocations -- do these manually as-needed from here on.
+$ !                Also some re-orderings of tests and outputs.
+$ !                Invented VMS$AUDITCONFIG logical (VMS$AUDIT.CONFIG file)
+$ !                and read-mechanism if such file exists; if it does not,
+$ !                fallback is to prompt user for VA$User (full name) and
+$ !                name of report.
 $ !  03-AUG-2015 : Add DIRECTORY SYS$ERRORLOG:ERRLOG.* file check.
 $ !  16-JUN-2015 : Summarize sys-errorlog for past 30 days (RSM).
 $ !                Remove audit-summary for SYSUAF events.
@@ -396,16 +406,18 @@ $ THEN ! AUTHORIZE is simplistic about naming LIST files, so fix:
 $      IF ( F$LOCATE("/FULL",P1) .LT. F$LENGTH(P1) )
 $      THEN ! post AUTH LIST /FULL: detailed analysis
 $           RENAME /NOLOG []SYSUAF.LIS 'VA$UAFfull'
-$           @'DD'UAF$DETAILED_ANALYSIS 'VA$UAFfull'
+$!! deprecated: UAF$DETAILED_ANALYSIS.COM
+$!! $           @'DD'UAF$DETAILED_ANALYSIS 'VA$UAFfull'
 $      ELSE ! post AUTH LIST /BRIEF: quick analysis
 $           RENAME /NOLOG []SYSUAF.LIS 'VA$UAFbrief'
-$           ! Not very modular, but let's do some account analysis here, too:
-$           IF ( VMSver .GTS. "V8.3" ) ! PIPE command in >= VMS v7.1 ...
-$                                      ! and SEARCH /STATISTICS=SYMBOL in >= v8.3-1H1
-$           THEN @'DD'UAF$QUICK_ANALYSIS 'VA$UAFbrief'
-$           ELSE wserr F$FAO( "%!AS-W-OLDVMS, PIPE &/or SEARCH/STAT=SYMBOL unavailable (pre-v!AS)", Fac, "7.1/8.0" )
-$                wserr "-W-NOTRUN, cannot execute @UAF$QUICK_ANALYSIS"
-$           ENDIF
+$!! deprecated: UAF$QUICK_ANALYSIS.COM
+$!! $           ! Not very modular, but let's do some account analysis here, too:
+$!! $           IF ( VMSver .GTS. "V8.3" ) ! PIPE command in >= VMS v7.1 ...
+$!! $                                      ! and SEARCH /STATISTICS=SYMBOL in >= v8.3-1H1
+$!! $           THEN @'DD'UAF$QUICK_ANALYSIS 'VA$UAFbrief'
+$!! $           ELSE wserr F$FAO( "%!AS-W-OLDVMS, PIPE &/or SEARCH/STAT=SYMBOL unavailable (pre-v!AS)", Fac, "7.1/8.0" )
+$!! $                wserr "-W-NOTRUN, cannot execute @UAF$QUICK_ANALYSIS"
+$!! $           ENDIF
 $      ENDIF
 $ ENDIF
 $ EXIT 1
@@ -502,7 +514,7 @@ $ SET CONTROL=(Y,T)
 $ ON CONTROL THEN GOSUB Ctrl_Y
 $ ON ERROR THEN GOTO Done
 $ !
-$ ProcVersion = "V1.16-01 (03-Aug-2015)"
+$ ProcVersion = "V1.17-02 (12-Jan-2016)"
 $ !
 $ Proc   = F$ENVIRONMENT("PROCEDURE")
 $ Fac    = F$PARSE(Proc,,,"NAME","SYNTAX_ONLY")
@@ -513,9 +525,6 @@ $ Node   = F$GETSYI("NODENAME")
 $ VMSver = F$GETSYI("VERSION")
 $ !
 $ Debugging = F$TRNLNM("TOOLS$DEBUG")
-$ !
-$ ! Define a global command symbol, just for convenience:
-$ IF F$TYPE(vmsaudit) .EQS. "" THEN vmsau*dit == "@''DD'VMS$Audit.com"
 $ !
 $ V$AUTH     = "MCR AUTHORIZE"
 $ V$LANCP    = "MCR LANCP"
@@ -529,10 +538,12 @@ $ V$DIR      = "DIRECTORY /SIZE /OWNER /DATE /PROTECTION /WIDTH=(FILENAME=20,SIZ
 $ V$Star     = "*"
 $ V$BckSSN   = Fac
 $ V$BckList  = "''Fac'.com;,''Fac'_*.tpu;,''Fac'_boot_options.answers;,que$stalled.com;" -
-             + ",uaf$detailed_analysis.com;,uaf$quick_analysis.com;,quick_audit.com;"
+             + ",uaf$detailed_analysis.com;,uaf$quick_analysis.com;,quick_audit.com;"    -
+             + ",vms$audit_*.config;"
 $ V$ZipArc   = "''Fac'.zip"
 $ V$ZipList  = "''Fac'.com ''Fac'_*.tpu ''Fac'_boot_options.answers que$stalled.com" -
-             + " uaf$detailed_analysis.com uaf$quick_analysis.com quick_audit.com"
+             + " uaf$detailed_analysis.com uaf$quick_analysis.com quick_audit.com"   -
+             + " vms$audit_*.config"
 $ !
 $ ! Calculate the first of last month (approx):
 $ ago = "-30-"
@@ -549,6 +560,18 @@ $ VA$AuditReport == F$PARSE("''Fac'_''Node'","''Dev'''Dir'.REPORT",,,"SYNTAX_ONL
 $ VA$UAFfull      = "''DD'''Fac'_''Node'_SYSUAF_FULL.LIS"
 $ VA$UAFbrief     = "''DD'''Fac'_''Node'_SYSUAF_BRIEF.LIS"
 $ VA$UTCreport    = "''DD'''Fac'_''Node'_utctime.lis"
+$ !
+$ ! VMS$AUDITCONFIG is expected to be a process (per-user) logical name,
+$ ! or given as P2, but have reasonable fallback default behavior, too:
+$ config = F$PARSE("VMS$AUDITCONFIG",P2,"''Dev'''Dir'VMS$AUDIT.CONFIG",,"SYNTAX_ONLY")
+$ IF ( F$SEARCH(config) .NES. "" )
+$ THEN VA$ConfigFile == config - F$PARSE(config,,,"VERSION","SYNTAX_ONLY")
+$ ELSE VA$ConfigFile == ""
+$ ENDIF
+$ !
+$ ! Default targets for FTP file transfer of reports:
+$ VA$FTPurl       = "class8.parsec.com"
+$ VA$FTPuser  = "lricker"
 $ !
 $ wso    = "WRITE sys$output"
 $ wserr  = "WRITE sys$error"
@@ -579,28 +602,54 @@ $ Call PreCleaner 'VA$UTCreport'
 $ !
 $ CALL TimeStamp ""   ! global VA$TimeStamp
 $ !
-$ wserr F$FAO( "!/%!AS-I-START, [4mVMS Audit Report[0m !AS starting at [1m!AS[0m...!/", Fac, ProcVersion, VA$TimeStamp )
-$ READ sys$command User /END_OF_FILE=Done /PROMPT="Enter your full name: "
-$ User = F$EDIT(User,"TRIM,COMPRESS")
-$ !
-$ deffile = VA$AuditReport
-$ !
-$ wso ""
-$ wso "  Choices for output file --"
-$ wso "    Terminal display: [1m''V$Star'[0m"
-$ wso "    [4m''deffile'[0m: <Enter>"
-$ wso "    Other file: filename"
-$ wso ""
-$ READ sys$command Answer /END_OF_FILE=Done /PROMPT="Report output file: "
-$ Answer = F$PARSE(Answer,deffile,,"NAME","SYNTAX_ONLY")
-$ IF Debugging THEN wserr "%''Fac'-I-OUTFILE, output file: ""''Answer'"""
-$ IF ( Answer .NES. V$Star )
-$ THEN Answer = F$PARSE(Answer,deffile,,,"SYNTAX_ONLY") - ";"
-$      DEFINE /NOLOG /PROCESS sys$output 'Answer'
+$ IF ( VA$ConfigFile .NES. "" )
+$ THEN wso F$FAO( "%!AS-I-CONFIG, reading configuration file !AS", Fac, VA$ConfigFile )
+$      OPEN /READ /ERROR=VACerror vac 'VA$ConfigFile'
+$vacloop:
+$      READ /END_OF_FILE=vacloopdone vac line
+$      cmd = F$EDIT(line,"UNCOMMENT,COMPRESS")
+$      IF ( cmd .NES. "" ) THEN 'cmd'  ! execute config-file lines directly...
+$      GOTO vacloop
+$vacloopdone:
+$      ! VMS$AUDIT_*.CONFIG file may either redefine VA$AuditReport, or
+$      !   it may just leave the above-calculated value alone...
+$      ! In either case, output is redirected here:
+$      wso F$FAO( "%!AS-I-OUTPUT, output redirected to !AS", Fac, VA$AuditReport )
+$ !! $      show symbol /local VA$User
+$ !! $      show symbol /local VA$FTPurl
+$ !! $      show symbol /local VA$FTPuser
+$ !! $      show symbol /local VA$Disposition
+$ !! $      READ sys$command dummy /PROMPT="<Enter> or <Ctrl/Z>: " /END_OF_FILE=Done
+$      DEFINE /NOLOG /PROCESS sys$output 'VA$AuditReport'
 $      OutToFile = "TRUE"
-$      VA$AuditReport == Answer    ! Save output filespec as a global symbol, don't delete it on exit...
-$ ! else display just goes to terminal...
+$      GOTO vaccontinue
+$ ELSE wserr F$FAO( "!/%!AS-I-START, [4mVMS Audit Report[0m !AS starting at [1m!AS[0m...!/", Fac, ProcVersion, VA$TimeStamp )
+$      READ sys$command VA$User /END_OF_FILE=Done /PROMPT="Enter your full name: "
+$      VA$User = F$EDIT(VA$User,"TRIM,COMPRESS")
+$ !
+$      deffile = VA$AuditReport
+$      wso ""
+$      wso "  Choices for output file --"
+$      wso "    Terminal display: [1m''V$Star'[0m"
+$      wso "    [4m''deffile'[0m: <Enter>"
+$      wso "    Other file: filename"
+$      wso ""
+$      READ sys$command Answer /END_OF_FILE=Done /PROMPT="Report output file: "
+$      Answer = F$PARSE(Answer,deffile,,"NAME","SYNTAX_ONLY")
+$      IF Debugging THEN wserr "%''Fac'-I-OUTFILE, output file: ""''Answer'"""
+$      IF ( Answer .NES. V$Star )
+$      THEN Answer = F$PARSE(Answer,deffile,,,"SYNTAX_ONLY") - ";"
+$           DEFINE /NOLOG /PROCESS sys$output 'Answer'
+$           OutToFile = "TRUE"
+$           VA$AuditReport == Answer    ! Save output filespec as a global symbol, don't delete it on exit...
+$      ! else display just goes to terminal...
+$      ENDIF
 $ ENDIF
+$vaccontinue:
+$ CLOSE /NOLOG vac
+$ !
+$ ! Define a global command symbol, just for convenience:
+$ IF F$TYPE(vmsaudit) .EQS. "" THEN vmsau*dit == "@''DD'VMS$Audit.com AUDIT ''VA$ConfigFile'"
 $ !
 $ NeedPrv = "SYSNAM,SYSPRV,SECURITY,CMKRNL,VOLPRO,BYPASS,OPER"
 $ prv = F$SETPRV(NeedPrv)
@@ -612,7 +661,7 @@ $ !
 $ !
 $ ! ========================
 $ !
-$ CALL ReportHeader "''Fac'" "''Proc'" "''ProcVersion'" "''Node'" "''VA$TimeStamp'" "''User'"
+$ CALL ReportHeader "''Fac'" "''Proc'" "''ProcVersion'" "''Node'" "''VA$TimeStamp'" "''VA$User'"
 $ !
 $ IF ( VMSver .GES. "V7.1" )         ! PIPE command in VMS v7.1 and higher...
 $ THEN CALL NetInstalled "DECnet"
@@ -628,10 +677,13 @@ $ ! I. System Summaries:
 $ wso ""
 $ wso F$FAO("!/%!AS-I-REBOOTED, last reboot on !AS", Fac, F$GETSYI("BOOTTIME") )
 $ wso ""
-$ CALL AuditStep "SHOW SYSTEM /HEADER /NOPROCESS /GRAND_TOTAL"
-$ !
+$ CALL AuditStep "SHOW SYSTEM /HEADER /NOPROCESS /GRAND_TOTAL" "NOPAGE"
 $ CALL AuditStep "SHOW NETWORK" "NOPAGE"
-$ CALL AuditStep "SHOW CLUSTER" "NOPAGE"
+$ !
+$ ! Special: Review all batch/device/printer/symbiont queues for job-counts exceeding threshold:
+$ IF F$TYPE( QUESTALL$THRESHOLD ) .EQS. "" THEN QUESTALL$THRESHOLD == 500
+$ CALL AuditStep "@''DD'QUE$STALLED ''QUESTALL$THRESHOLD' TRUE" "" "@''DD'QUE$STALLED ''QUESTALL$THRESHOLD'"
+$ CALL DiskSpace
 $ !
 $ CALL AuditStep "SHOW ERROR"
 $ CALL AuditStep "V$DIR SYS$ERRORLOG:ERRLOG.SYS,SYS$ERRORLOG:ERRLOG.OLD*" -
@@ -640,6 +692,9 @@ $ CALL AuditStep "ANALYZE /ERROR /ELV TRANSLATE /SUMMARY /SINCE=''FirstofLastMon
     "NOPAGE" "ANALYZE /ERROR /SUMMARY /SINCE=''FirstofLastMonth'"
 $ !
 $ CALL AuditStep "SHOW MEMORY /FILES"
+$ !
+$ CALL AuditStep "SHOW CLUSTER"
+$ !
 $ CALL AuditStep "V$DIR SYS$SYSTEM:*FILE.SYS;*,*DUMP*.DMP;*" "NOPAGE" "DIRECTORY SYS$SYSTEM:*FILE.SYS,*DUMP*.DMP"
 $ !
 $ IF ( F$TRNLNM("SYSUAF","LNM$SYSTEM_DIRECTORY") .NES. "" )
@@ -663,17 +718,12 @@ $ !
 $ CALL AuditStep "SHOW ACCOUNTING" ""
 $ CALL AuditStep "V$DIR SYS$SYSTEM:LMF$*.LDB" "NOPAGE" "DIRECTORY SYS$SYSTEM:LMF$*.LDB"
 $ !
-$ ! Special: Review all batch/device/printer/symbiont queues for job-counts exceeding threshold:
-$ IF F$TYPE( QUESTALL$THRESHOLD ) .EQS. "" THEN QUESTALL$THRESHOLD == 500
-$ CALL AuditStep "@''DD'QUE$STALLED ''QUESTALL$THRESHOLD' TRUE" "" "@''DD'QUE$STALLED ''QUESTALL$THRESHOLD'"
-$ !
 $ CALL AuditStep "V$AUTH LIST * /BRIEF" "NOPAGE" "AUTH LIST * /BRIEF"
 $ CALL AuditStep "V$AUTH LIST * /FULL"  ""       "AUTH LIST * /FULL"
 $ !
 $ ! ========================
 $ ! II. System Configuration -- Hardware, Storage, Cluster and Shadowing/Controller
 $ CALL AuditStep "SHOW DEVICE D /MOUNTED"
-$ CALL DiskSpace
 $ !
 $ CALL AuditStep "SHOW CPU /FULL"
 $ CALL AuditStep "SHOW MEMORY /FULL"
@@ -883,17 +933,20 @@ $      msg = "=== " + Fac + " reports "
 $      len = VA$PgWi - F$LENGTH( msg )
 $      wso F$FAO( "!/!AS !#*=", msg, len )
 $      V$DIR /SINCE /SIZE=ALL 'Fac'_'Node'*.*;0
-$      wso ""
-$      Rfile = F$PARSE(VA$AuditReport,,,"NAME","SYNTAX_ONLY") + F$PARSE(VA$AuditReport,,,"TYPE","SYNTAX_ONLY")
-$      READ sys$command Answer /END_OF_FILE=Done -
-         /PROMPT="''Rfile' -- FTP, Type or Edit it [F/t/e]? "
-$      Answer = F$PARSE(Answer,"FTP",,"NAME","SYNTAX_ONLY")
-$      GOTO 'F$EXTRACT(0,1,Answer)'$
+$      IF ( VA$ConfigFile .EQS. "" )
+$      THEN wso ""
+$           Rfile = F$PARSE(VA$AuditReport,,,"NAME","SYNTAX_ONLY") + F$PARSE(VA$AuditReport,,,"TYPE","SYNTAX_ONLY")
+$           READ sys$command Answer /END_OF_FILE=Done -
+            /PROMPT="''Rfile' -- FTP, Type or Edit it [F/t/e]? "
+$           VA$Disposition = F$PARSE(Answer,"FTP",,"NAME","SYNTAX_ONLY")
+$      ! ELSE : using VA$Disposition from VMS$AUDIT_*.CONFIG file
+$      ENDIF
+$      GOTO 'F$EXTRACT(0,1,VA$Disposition)'$
 $ !
 $F$:    ! FTP Audit Report File to home-base (PARSEC)
 $FTP$:
 $      DEFINE /USER_MODE sys$input sys$command
-$      FTP class8.parsec.com /USER=lricker
+$      FTP 'VA$FTPurl' /USER='VA$FTPuser'
 $      GOTO Done
 $T$:    ! Type/display Audit Report File
 $TYP$:
@@ -976,6 +1029,7 @@ $ wso ""
 $ wso F$FAO( "%!AS-I-DONE, cleanup...", Fac )
 $ wso ""
 $ SET NOON
+$ CLOSE /NOLOG vac
 $ IF OutToFile THEN V$DEASSIGN /PROCESS sys$output
 $ !
 $ IF F$TYPE(prv)             .NES. "" THEN prv = F$SETPRV(prv)
@@ -990,12 +1044,17 @@ $ IF F$TYPE(VA$TimeStamp)    .NES. "" THEN DELETE /SYMBOL /GLOBAL VA$TimeStamp
 $ IF F$TYPE(VA$DECnet)       .NES. "" THEN DELETE /SYMBOL /GLOBAL VA$DECnet
 $ IF F$TYPE(VA$Dashes)       .NES. "" THEN DELETE /SYMBOL /GLOBAL VA$Dashes
 $ IF F$TYPE(VA$DblDashes)    .NES. "" THEN DELETE /SYMBOL /GLOBAL VA$DblDashes
-$ ! Note: Do *not* delete global symbol VA$AuditReport --
-$ !       once defined, used as a user-login convenience.
-$ EXIT
+$ ! Note: Do *not* delete global symbols VMSAU*DIT, VA$AuditReport or VA$ConfigFile --
+$ !       once defined, used as user-login conveniences.
+$ EXIT 1  ! 'F$VERIFY(0)'
+$ !
+$VACerror:
+$ CLOSE /NOLOG vac
+$ werr F$FAO( "%!AS-E-FNF, file not found: !AS", Fac, VA$ConfigFile )
+$ EXIT %X2C  ! 'F$VERIFY(0)'
 $ !
 $Ctrl_Y:
-$ EXIT %X2C
+$ EXIT %X2C  ! 'F$VERIFY(0)'
 $ !
 $ !
 $ ! ========================
